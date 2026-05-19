@@ -1,0 +1,395 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// USERS
+// ─────────────────────────────────────────────────────────────
+model User {
+  id        String   @id @default(cuid())
+  clerkId   String   @unique
+  email     String   @unique
+  firstName String?
+  lastName  String?
+  avatarUrl String?
+  role      Role     @default(CLIENT)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  adminClients    Client[]    @relation("AdminClients")
+  clientOf        Client[]    @relation("ClientUsers")
+  uploads         Asset[]
+  approvals       Approval[]
+  notifications   Notification[]
+
+  @@map("users")
+}
+
+enum Role {
+  ADMIN
+  CLIENT
+  DESIGNER
+}
+
+// ─────────────────────────────────────────────────────────────
+// CLIENTS
+// ─────────────────────────────────────────────────────────────
+model Client {
+  id               String       @id @default(cuid())
+  name             String
+  brand            String?
+  industry         String?
+  platforms        String[]     // ["instagram","linkedin","tiktok","x"]
+  package          String?
+  postingFrequency Int          @default(12)
+  status           ClientStatus @default(ONBOARDING)
+  contactName      String?
+  contactEmail     String?
+  contactPhone     String?
+  logoUrl          String?
+  websiteUrl       String?
+  deadline         DateTime?
+  notes            String?      @db.Text
+
+  // Admin who owns this client
+  adminId     String
+  admin       User         @relation("AdminClients", fields: [adminId], references: [id])
+
+  // Client portal user
+  clientUserId String?
+  clientUser   User?        @relation("ClientUsers", fields: [clientUserId], references: [id])
+
+  // Relations
+  briefs              Brief[]
+  projects            Project[]
+  platformConnections PlatformConnection[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("clients")
+}
+
+enum ClientStatus {
+  ONBOARDING
+  BRIEF_UPLOADED
+  STRATEGY_PENDING
+  STRATEGY_IN_REVIEW
+  STRATEGY_SENT
+  STRATEGY_APPROVED
+  CALENDAR_PENDING
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+// ─────────────────────────────────────────────────────────────
+// BRIEFS
+// ─────────────────────────────────────────────────────────────
+model Brief {
+  id       String @id @default(cuid())
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  // Uploaded files
+  briefFileUrl  String?
+  briefFileName String?
+
+  // URLs
+  websiteUrl    String?
+  socialLinks   String[]
+  referenceUrls String[]
+
+  // Brand assets (file URLs)
+  brandAssets String[]
+
+  // Admin notes & internal framework inputs
+  adminNotes      String? @db.Text
+  targetAudience  String? @db.Text
+  competitorNotes String? @db.Text
+  campaignGoals   String? @db.Text
+  toneOfVoice     String? @db.Text
+  sector          String?
+  budgetRange     String?
+
+  strategies Strategy[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("briefs")
+}
+
+// ─────────────────────────────────────────────────────────────
+// STRATEGY OUTPUTS
+// ─────────────────────────────────────────────────────────────
+model Strategy {
+  id      String @id @default(cuid())
+  briefId String
+  brief   Brief  @relation(fields: [briefId], references: [id], onDelete: Cascade)
+
+  // AI-generated content
+  summary           String? @db.Text
+  contentPillars    Json?   // [{ name, description, postsPerMonth }]
+  targetAudience    Json?   // { demographics, psychographics, painPoints }
+  messagingDirection String? @db.Text
+  toneRecommendation String?
+  platformStrategy   Json?   // { platform: { format, frequency, bestTimes } }
+  keyMessages        String[]
+
+  // Raw AI output for reference
+  rawOutput Json?
+
+  // Lifecycle
+  status     StrategyStatus @default(DRAFT)
+  sentAt     DateTime?
+  approvedAt DateTime?
+  version    Int            @default(1)
+
+  // Relations
+  approvals Approval[]
+  projects  Project[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("strategies")
+}
+
+enum StrategyStatus {
+  DRAFT
+  GENERATING
+  INTERNAL_REVIEW
+  SENT_TO_CLIENT
+  CHANGES_REQUESTED
+  APPROVED
+}
+
+// ─────────────────────────────────────────────────────────────
+// PROJECTS / MONTHLY CAMPAIGNS
+// ─────────────────────────────────────────────────────────────
+model Project {
+  id         String @id @default(cuid())
+  clientId   String
+  client     Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  strategyId String?
+  strategy   Strategy? @relation(fields: [strategyId], references: [id])
+
+  title  String
+  month  Int    // 1–12
+  year   Int
+  status ProjectStatus @default(PLANNING)
+  notes  String?       @db.Text
+
+  posts Post[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clientId, month, year])
+  @@map("projects")
+}
+
+enum ProjectStatus {
+  PLANNING
+  CALENDAR_GENERATING
+  CALENDAR_READY
+  IN_DESIGN
+  IN_REVIEW
+  APPROVED
+  PUBLISHING
+  COMPLETED
+}
+
+// ─────────────────────────────────────────────────────────────
+// CALENDAR POSTS
+// ─────────────────────────────────────────────────────────────
+model Post {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // Scheduling
+  scheduledDate DateTime
+  publishedAt   DateTime?
+
+  // Content
+  platform    String   // instagram | linkedin | tiktok | x
+  format      String?  // reel | static | carousel | story | thread
+  objective   String?
+  topic       String?
+  hook        String?  @db.Text
+  caption     String?  @db.Text
+  hashtags    String[]
+  cta         String?
+  creativeNote String? @db.Text
+
+  // Lifecycle
+  status PostStatus @default(DRAFT)
+
+  // Relations
+  assets     Asset[]
+  approvals  Approval[]
+  publishLog PublishLog?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("posts")
+}
+
+enum PostStatus {
+  DRAFT
+  IN_DESIGN
+  CREATIVE_UPLOADED
+  AWAITING_APPROVAL
+  REVISION_REQUIRED
+  APPROVED
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+}
+
+// ─────────────────────────────────────────────────────────────
+// CREATIVE ASSETS
+// ─────────────────────────────────────────────────────────────
+model Asset {
+  id   String @id @default(cuid())
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  uploadedById String
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
+
+  fileUrl      String
+  fileType     String  // image | video
+  fileName     String
+  mimeType     String?
+  fileSize     Int?    // bytes
+  version      Int     @default(1)
+  isCurrent    Boolean @default(true)
+  thumbnailUrl String?
+  notes        String?
+
+  createdAt DateTime @default(now())
+
+  @@map("assets")
+}
+
+// ─────────────────────────────────────────────────────────────
+// APPROVALS
+// ─────────────────────────────────────────────────────────────
+model Approval {
+  id String @id @default(cuid())
+
+  type       ApprovalType
+  strategyId String?
+  strategy   Strategy?    @relation(fields: [strategyId], references: [id])
+  postId     String?
+  post       Post?        @relation(fields: [postId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  action  ApprovalAction
+  comment String?        @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@map("approvals")
+}
+
+enum ApprovalType {
+  STRATEGY
+  POST_CREATIVE
+}
+
+enum ApprovalAction {
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+}
+
+// ─────────────────────────────────────────────────────────────
+// PLATFORM CONNECTIONS
+// ─────────────────────────────────────────────────────────────
+model PlatformConnection {
+  id       String @id @default(cuid())
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  platform     String  // instagram | linkedin | tiktok | x
+  accountId    String?
+  accountName  String?
+  accessToken  String? // store encrypted in prod
+  refreshToken String?
+  tokenExpiry  DateTime?
+  isActive     Boolean @default(true)
+  scopes       String[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clientId, platform])
+  @@map("platform_connections")
+}
+
+// ─────────────────────────────────────────────────────────────
+// PUBLISHING LOGS
+// ─────────────────────────────────────────────────────────────
+model PublishLog {
+  id     String @id @default(cuid())
+  postId String @unique
+  post   Post   @relation(fields: [postId], references: [id])
+
+  platform       String
+  scheduledAt    DateTime
+  publishedAt    DateTime?
+  platformPostId String?
+  liveUrl        String?
+  status         PublishStatus @default(SCHEDULED)
+  errorMessage   String?       @db.Text
+  retryCount     Int           @default(0)
+  rawResponse    Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("publish_logs")
+}
+
+enum PublishStatus {
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+// ─────────────────────────────────────────────────────────────
+// NOTIFICATIONS
+// ─────────────────────────────────────────────────────────────
+model Notification {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type    String  // strategy_ready | approval_needed | post_approved | published | revision_requested
+  title   String
+  message String
+  link    String?
+  isRead  Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}
