@@ -53,7 +53,7 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3001;
   await app.listen(port);
-  console.log(`🚀 Martech API running on http://localhost:${port}/api/v1`);
+  console.log(`🚀 Martech API running on new http://localhost:${port}/api/v1`);
 }
 
 bootstrap();
