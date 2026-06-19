@@ -25,6 +25,7 @@ import { SocialAuthModule } from './social-auth/social-auth.module';
     ClientsModule,
     BriefsModule,
     StrategyModule,
+    
     ProjectsModule,
     PostsModule,
     AssetsModule,
