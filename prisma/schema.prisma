@@ -376,6 +376,19 @@ enum PublishStatus {
 }
 
 // ─────────────────────────────────────────────────────────────
+// ANALYTICS
+// ─────────────────────────────────────────────────────────────
+model InstagramFollowerSnapshot {
+  id            String   @id @default(cuid())
+  clientId      String
+  date          DateTime @db.Date
+  followerCount Int
+
+  @@unique([clientId, date])
+  @@map("instagram_follower_snapshots")
+}
+
+// ─────────────────────────────────────────────────────────────
 // NOTIFICATIONS
 // ─────────────────────────────────────────────────────────────
 model Notification {

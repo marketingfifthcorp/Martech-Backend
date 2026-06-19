@@ -37,13 +37,15 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     const realEmail = await this.resolveEmail(clerkId, payload);
 
     if (!user) {
+      // First user ever becomes ADMIN; subsequent new sign-ins are CLIENT
+      const existingCount = await this.prisma.user.count();
       user = await this.prisma.user.create({
         data: {
           clerkId,
           email: realEmail,
           firstName: payload.first_name ?? null,
           lastName: payload.last_name ?? null,
-          role: 'CLIENT',
+          role: existingCount === 0 ? 'ADMIN' : 'CLIENT',
         },
       });
     } else if (realEmail && user.email.endsWith('@unknown.local')) {

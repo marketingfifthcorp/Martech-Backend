@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, OnModuleInit, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 
 @Injectable()
 export class AssetsService implements OnModuleInit {
+  private readonly logger = new Logger(AssetsService.name);
   private supabase;
 
   constructor(
@@ -22,10 +23,15 @@ export class AssetsService implements OnModuleInit {
   async onModuleInit() {
     const { data } = await this.supabase.storage.getBucket('creatives');
     if (!data) {
-      await this.supabase.storage.createBucket('creatives', {
+      const { error } = await this.supabase.storage.createBucket('creatives', {
         public: true,
         fileSizeLimit: 209715200, // 200 MB
       });
+      if (error) {
+        this.logger.error(`Failed to create "creatives" storage bucket: ${error.message}. Create it manually in Supabase dashboard.`);
+      } else {
+        this.logger.log('Created "creatives" Supabase storage bucket.');
+      }
     }
   }
 

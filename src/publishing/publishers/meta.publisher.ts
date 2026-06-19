@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { PostPayload, PublishResult, PlatformCredentials } from './publisher.types';
 
-const GRAPH = 'https://graph.facebook.com/v19.0';
+const GRAPH = 'https://graph.facebook.com/v23.0';
 
 export class MetaPublisher {
   private readonly logger = new Logger(MetaPublisher.name);
@@ -14,6 +14,12 @@ export class MetaPublisher {
     let igUserId = creds.accountId;
     if (!igUserId) {
       igUserId = await this.resolveIgUserId(token);
+    }
+
+    if (!payload.assetUrl) {
+      throw new Error(
+        'No creative uploaded for this post. Upload an image or video in the Design Queue before publishing.',
+      );
     }
 
     const caption = this.buildCaption(payload);
@@ -54,7 +60,55 @@ export class MetaPublisher {
     const mediaData = await mediaRes.json() as any;
     const liveUrl = mediaData.permalink || `https://www.instagram.com/p/${published.id}`;
 
+    // Step 4: Post the same content to the linked Facebook Page.
+    // Non-blocking — Instagram already published; a Facebook failure should not
+    // roll back or fail the overall job.
+    try {
+      await this.publishToFacebookPage(token, caption, payload.assetUrl);
+    } catch (e: any) {
+      this.logger.warn(`Facebook Page post failed (Instagram post succeeded): ${e.message}`);
+    }
+
     return { platformPostId: published.id, liveUrl };
+  }
+
+  // Posts content to the Facebook Page whose access token we already hold.
+  // A Page-scoped token's /me endpoint resolves to the Page itself, so we can
+  // derive the Page ID without storing it separately during OAuth.
+  private async publishToFacebookPage(
+    pageToken: string,
+    message: string,
+    imageUrl?: string,
+  ): Promise<void> {
+    const pageRes = await fetch(`${GRAPH}/me?fields=id&access_token=${pageToken}`);
+    const pageData = await pageRes.json() as any;
+    if (!pageRes.ok || !pageData.id) {
+      throw new Error(
+        `Could not resolve Facebook Page ID: ${pageData.error?.message ?? JSON.stringify(pageData)}`,
+      );
+    }
+    const pageId = pageData.id;
+
+    // Use /photos for image posts (renders inline), /feed for text-only
+    const endpoint = imageUrl
+      ? `${GRAPH}/${pageId}/photos`
+      : `${GRAPH}/${pageId}/feed`;
+
+    const body: Record<string, string> = { message, access_token: pageToken };
+    if (imageUrl) body.url = imageUrl;
+
+    const feedRes = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const feedData = await feedRes.json() as any;
+    if (!feedRes.ok) {
+      throw new Error(
+        `Facebook Page post failed: ${feedData.error?.message ?? JSON.stringify(feedData)}`,
+      );
+    }
+    this.logger.log(`Facebook Page post created: ${feedData.post_id ?? feedData.id}`);
   }
 
   // Resolves IG business account ID from user access token via Facebook Pages

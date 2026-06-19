@@ -23,6 +23,8 @@ export class SocialAuthService {
   private get frontendUrl() {
     return this.config.get<string>('FRONTEND_URL') || 'http://localhost:3000';
   }
+  private get metaGraph() { return 'https://graph.facebook.com/v23.0'; }
+  private get metaDialog() { return 'https://www.facebook.com/v23.0'; }
   private callbackUrl(platform: string) {
     return `${this.backendUrl}/api/v1/social-auth/${platform}/callback`;
   }
@@ -49,10 +51,11 @@ export class SocialAuthService {
       client_id: appId,
       redirect_uri: this.callbackUrl('meta'),
       state,
-      scope: 'instagram_basic,instagram_content_publish,pages_read_engagement,pages_show_list',
+      scope: 'instagram_basic,instagram_content_publish,pages_read_engagement,pages_show_list,pages_manage_posts,business_management',
       response_type: 'code',
+      auth_type: 'rerequest',
     });
-    return `https://www.facebook.com/v19.0/dialog/oauth?${params}`;
+    return `${this.metaDialog}/dialog/oauth?${params}`;
   }
 
   private buildLinkedInUrl(state: string): string {
@@ -116,11 +119,11 @@ export class SocialAuthService {
         case 'tiktok':   await this.handleTikTokCallback(code, state, clientId); break;
         case 'x':        await this.handleXCallback(code, state, clientId); break;
       }
-      return `${this.frontendUrl}/settings?tab=platforms&connected=${platform}`;
+      return `${this.frontendUrl}/clients/${clientId}?tab=6&connected=${platform}`;
     } catch (e: any) {
       this.logger.error(`${platform} OAuth callback failed:`, e.message);
       const msg = encodeURIComponent(e.message || 'OAuth failed');
-      return `${this.frontendUrl}/settings?tab=platforms&error=${platform}&msg=${msg}`;
+      return `${this.frontendUrl}/clients/${clientId}?tab=6&error=${platform}&msg=${msg}`;
     }
   }
 
@@ -138,7 +141,7 @@ export class SocialAuthService {
       code,
     });
     const tokenRes = await fetch(
-      `https://graph.facebook.com/v19.0/oauth/access_token?${tokenParams}`,
+      `${this.metaGraph}/oauth/access_token?${tokenParams}`,
     );
     const tokenData = await tokenRes.json() as any;
     if (!tokenRes.ok) throw new Error(tokenData.error?.message || 'Meta token exchange failed');
@@ -150,7 +153,7 @@ export class SocialAuthService {
       client_secret: appSecret,
       fb_exchange_token: tokenData.access_token,
     });
-    const llRes = await fetch(`https://graph.facebook.com/v19.0/oauth/access_token?${llParams}`);
+    const llRes = await fetch(`${this.metaGraph}/oauth/access_token?${llParams}`);
     const llData = await llRes.json() as any;
     const longLivedToken = llData.access_token || tokenData.access_token;
     const expiry = llData.expires_in
@@ -163,38 +166,48 @@ export class SocialAuthService {
     let pageToken = longLivedToken;
 
     const pagesRes = await fetch(
-      `https://graph.facebook.com/v19.0/me/accounts?access_token=${longLivedToken}`,
+      `${this.metaGraph}/me/accounts?access_token=${longLivedToken}`,
     );
     const pagesData = await pagesRes.json() as any;
+    this.logger.log(`Meta pages lookup: found ${pagesData.data?.length ?? 0} page(s)`);
 
-    if (pagesData.data?.length) {
-      for (const page of pagesData.data) {
-        const igRes = await fetch(
-          `https://graph.facebook.com/v19.0/${page.id}?fields=instagram_business_account&access_token=${page.access_token}`,
+    if (!pagesData.data?.length) {
+      throw new Error(
+        'No Facebook Pages found on this account. ' +
+        'You need a Facebook Page (not just a personal profile) to connect Instagram. ' +
+        'Create a Facebook Page, then connect your Instagram Business/Creator account to it.',
+      );
+    }
+
+    for (const page of pagesData.data) {
+      this.logger.log(`Checking page "${page.name}" (${page.id}) for Instagram Business Account`);
+      const igRes = await fetch(
+        `${this.metaGraph}/${page.id}?fields=instagram_business_account&access_token=${page.access_token}`,
+      );
+      const igData = await igRes.json() as any;
+      this.logger.log(`Page ${page.id} IG data: ${JSON.stringify(igData)}`);
+      if (igData.instagram_business_account?.id) {
+        accountId = igData.instagram_business_account.id;
+        pageToken = page.access_token;
+
+        // Get IG username
+        const igInfoRes = await fetch(
+          `${this.metaGraph}/${accountId}?fields=name,username&access_token=${pageToken}`,
         );
-        const igData = await igRes.json() as any;
-        if (igData.instagram_business_account?.id) {
-          accountId = igData.instagram_business_account.id;
-          pageToken = page.access_token;
-
-          // Get IG username
-          const igInfoRes = await fetch(
-            `https://graph.facebook.com/v19.0/${accountId}?fields=name,username&access_token=${pageToken}`,
-          );
-          const igInfo = await igInfoRes.json() as any;
-          accountName = igInfo.username ? `@${igInfo.username}` : igInfo.name || 'Instagram Account';
-          break;
-        }
+        const igInfo = await igInfoRes.json() as any;
+        accountName = igInfo.username ? `@${igInfo.username}` : igInfo.name || 'Instagram Account';
+        this.logger.log(`Found Instagram Business Account: ${accountName} (${accountId})`);
+        break;
       }
     }
 
-    // Fall back to Facebook user info if no IG found
     if (!accountId) {
-      const meRes = await fetch(`https://graph.facebook.com/v19.0/me?fields=id,name&access_token=${longLivedToken}`);
-      const meData = await meRes.json() as any;
-      accountId = meData.id;
-      accountName = meData.name || 'Facebook User';
-      this.logger.warn(`Meta: No Instagram Business Account found for clientId=${clientId}. Storing Facebook user token as fallback.`);
+      const pageNames = pagesData.data.map((p: any) => `"${p.name}"`).join(', ');
+      throw new Error(
+        `Checked ${pagesData.data.length} Facebook Page(s) (${pageNames}) — none have an Instagram Business Account linked. ` +
+        'Go to your Facebook Page → Settings → Instagram → Connect account. ' +
+        'This is different from Account Center — you must link Instagram directly to the Page, not just your personal Facebook profile.',
+      );
     }
 
     await this.upsertConnection({
