@@ -15,6 +15,7 @@ import { AiModule } from './ai/ai.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { SocialAuthModule } from './social-auth/social-auth.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { SocialAuthModule } from './social-auth/social-auth.module';
     WebhooksModule,
     NotificationsModule,
     SocialAuthModule,
+    AnalyticsModule,
   ],
 })
 export class AppModule {}

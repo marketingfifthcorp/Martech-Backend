@@ -381,8 +381,9 @@ enum PublishStatus {
 model InstagramFollowerSnapshot {
   id            String   @id @default(cuid())
   clientId      String
-  date          DateTime @db.Date
+  date          String   // "YYYY-MM-DD"
   followerCount Int
+  createdAt     DateTime @default(now())
 
   @@unique([clientId, date])
   @@map("instagram_follower_snapshots")

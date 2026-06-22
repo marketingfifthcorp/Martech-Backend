@@ -51,7 +51,7 @@ export class SocialAuthService {
       client_id: appId,
       redirect_uri: this.callbackUrl('meta'),
       state,
-      scope: 'instagram_basic,instagram_content_publish,pages_read_engagement,pages_show_list,pages_manage_posts,business_management',
+      scope: 'instagram_basic,instagram_content_publish,pages_read_engagement,pages_show_list,pages_manage_posts,business_management,instagram_manage_insights',
       response_type: 'code',
       auth_type: 'rerequest',
     });
