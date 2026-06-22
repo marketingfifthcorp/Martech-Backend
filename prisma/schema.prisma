@@ -407,3 +407,15 @@ model Notification {
 
   @@map("notifications")
 }
+
+// ─────────────────────────────────────────────────────────────
+// PENDING INVITATIONS
+// ─────────────────────────────────────────────────────────────
+model Invitation {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  role      Role
+  createdAt DateTime @default(now())
+
+  @@map("invitations")
+}

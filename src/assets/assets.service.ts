@@ -74,18 +74,10 @@ export class AssetsService implements OnModuleInit {
       },
     });
 
-    // Update post status to AWAITING_APPROVAL
-    const updatedPost = await this.prisma.post.update({
+    // Move post to CREATIVE_UPLOADED — designer still needs to explicitly submit for review
+    await this.prisma.post.update({
       where: { id: postId },
-      data: { status: 'AWAITING_APPROVAL' },
-      include: { project: { include: { client: true } } },
-    });
-
-    await this.notifications.notifyAdmins({
-      type: 'approval_needed',
-      title: 'Creative Uploaded',
-      message: `New creative ready for "${updatedPost.topic ?? postId}" — awaiting client approval`,
-      link: `/post-review?postId=${postId}`,
+      data: { status: 'CREATIVE_UPLOADED' },
     });
 
     return asset;

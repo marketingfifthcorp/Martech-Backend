@@ -37,17 +37,28 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     const realEmail = await this.resolveEmail(clerkId, payload);
 
     if (!user) {
-      // First user ever becomes ADMIN; subsequent new sign-ins are CLIENT
-      const existingCount = await this.prisma.user.count();
+      // First user ever → ADMIN. Otherwise check pending invitation for role, fall back to CLIENT.
+      const [existingCount, invitation] = await Promise.all([
+        this.prisma.user.count(),
+        this.prisma.invitation.findUnique({ where: { email: realEmail } }),
+      ]);
+
+      const role = existingCount === 0 ? 'ADMIN' : (invitation?.role ?? 'CLIENT');
+
       user = await this.prisma.user.create({
         data: {
           clerkId,
           email: realEmail,
           firstName: payload.first_name ?? null,
           lastName: payload.last_name ?? null,
-          role: existingCount === 0 ? 'ADMIN' : 'CLIENT',
+          role,
         },
       });
+
+      // Consume the invitation so it can't be reused
+      if (invitation) {
+        await this.prisma.invitation.delete({ where: { email: realEmail } }).catch(() => {});
+      }
     } else if (realEmail && user.email.endsWith('@unknown.local')) {
       // Heal users provisioned before Clerk email resolution was in place
       user = await this.prisma.user.update({

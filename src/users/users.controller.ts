@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Param, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Body, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { AuthGuard } from '../auth/auth.guard';
@@ -17,6 +17,12 @@ export class UsersController {
   @Get('me')
   getMe(@CurrentUser() user: any) {
     return this.usersService.getMe(user.id);
+  }
+
+  @Post('invite')
+  @Roles(Role.ADMIN)
+  invite(@Body('email') email: string, @Body('role') role: Role) {
+    return this.usersService.inviteUser(email, role);
   }
 
   @Get()

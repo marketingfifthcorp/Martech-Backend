@@ -30,7 +30,7 @@ export class PostsService {
       include: {
         assets: { where: { isCurrent: true } },
         approvals: { orderBy: { createdAt: 'desc' }, take: 1 },
-        project: { select: { id: true, month: true, year: true, title: true } },
+        project: { select: { id: true, clientId: true, month: true, year: true, title: true } },
       },
       orderBy: { scheduledDate: 'asc' },
     });
@@ -68,12 +68,22 @@ export class PostsService {
     });
   }
 
-  /** Designer marks post as creative uploaded */
+  /** Designer explicitly submits uploaded creative for admin review */
   async markCreativeUploaded(id: string) {
-    return this.prisma.post.update({
+    const post = await this.prisma.post.update({
       where: { id },
       data: { status: 'AWAITING_APPROVAL' },
+      include: { project: { include: { client: true } } },
     });
+
+    await this.notifications.notifyAdmins({
+      type: 'approval_needed',
+      title: 'Creative Submitted',
+      message: `New creative ready for "${post.topic ?? id}" — awaiting approval`,
+      link: `/post-review?postId=${id}`,
+    });
+
+    return post;
   }
 
   /** Client approves or requests changes on a post */

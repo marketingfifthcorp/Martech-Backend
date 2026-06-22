@@ -36,6 +36,11 @@ export class ClientsController {
     return this.service.getStats(user.id);
   }
 
+  @Get(':id/overview')
+  findOverview(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.service.getOverview(id, user.id, user.role);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: any) {
     return this.service.findOne(id, user.id, user.role);

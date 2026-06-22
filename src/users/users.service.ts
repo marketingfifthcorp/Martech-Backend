@@ -1,10 +1,18 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ConfigService } from '@nestjs/config';
 import { Role } from '@prisma/client';
+import { MailService } from '../mail/mail.service';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(UsersService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private config: ConfigService,
+    private mail: MailService,
+  ) {}
 
   async findAll() {
     return this.prisma.user.findMany({
@@ -50,6 +58,22 @@ export class UsersService {
 
   async updateRole(id: string, role: Role) {
     return this.prisma.user.update({ where: { id }, data: { role } });
+  }
+
+  async inviteUser(email: string, role: Role) {
+    const normalised = email.toLowerCase().trim();
+
+    // Upsert the invitation so re-inviting the same email just updates the role
+    await this.prisma.invitation.upsert({
+      where:  { email: normalised },
+      update: { role },
+      create: { email: normalised, role },
+    });
+
+    await this.mail.sendInvite(normalised, role);
+
+    this.logger.log(`Invited ${normalised} as ${role}`);
+    return { success: true, email: normalised, role };
   }
 
   async deactivate(clerkId: string) {
