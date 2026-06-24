@@ -24,5 +24,6 @@ jobs:
             npm install
             npm run build
             pm2 delete martech-backend || true
-            pm2 start dist/main.js --name martech-backend
+            export $(cat /home/ec2-user/martech-backend/.env | grep -v '^#' | xargs)
+            pm2 start dist/main.js --name martech-backend --cwd /home/ec2-user/martech-backend
             pm2 save
